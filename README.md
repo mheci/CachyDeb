@@ -63,6 +63,7 @@ choose **Run workflow**.
 | `runner` | Host runner for the Debian 13 build container | `blacksmith-16vcpu-ubuntu-2404` |
 | `kernel_variant` | CachyOS variant | `linux-cachyos` |
 | `cpu_scheduler` | CachyOS scheduler flavor | `cachyos` |
+| `cpu_optimization` | CPU target and tuning | `x86-64-v3-znver3` |
 | `expected_version` | Fail if upstream does not match this `pkgver-pkgrel` | empty |
 | `publish_release` | Publish after all gates pass | `true` |
 | `run_boot_tests` | Run the QEMU boot matrix | `true` |
@@ -85,12 +86,28 @@ The scheduler mapping is `cachyos`, `bore`, `eevdf`, and `cachyos` for LTS. The
 kernel source and variant config come from the official CachyOS packaging
 repository at build time.
 
+## CPU targets
+
+The default build uses `-march=x86-64-v3` and `-mtune=znver3`. It runs on any
+x86-64-v3 CPU and is tuned for AMD Zen 3.
+
+| `cpu_optimization` | Compiler target | Compatibility |
+| --- | --- | --- |
+| `x86-64-v3-znver3` | `-march=x86-64-v3 -mtune=znver3` | any x86-64-v3 CPU |
+| `x86-64-v3` | `-march=x86-64-v3` | any x86-64-v3 CPU |
+| `znver3` | `-march=znver3` | AMD Zen 3 and newer |
+| `generic` | baseline x86-64 | any x86-64 CPU |
+
+x86-64-v3 requires AVX2, BMI2, and FMA. That covers most desktops from around
+2013 onward. Choose `generic` for older hardware or a kernel that must boot
+across a mixed fleet.
+
 ## Debian desktop configuration
 
 The build starts from the CachyOS configuration and applies a Debian 13 desktop
 pass. The important settings are:
 
-- generic x86-64 target for portability
+- x86-64-v3 target with znver3 tuning by default; generic x86-64 optional
 - initramfs, devtmpfs, serial console, and EFI stub boot
 - dynamic preemption, 1000 Hz tick, schedutil CPU frequency governor
 - cgroups, BPF, PSI, and AppArmor

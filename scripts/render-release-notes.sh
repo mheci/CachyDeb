@@ -1,19 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-release_dir="${1:?usage: render-release-notes.sh RELEASE_DIR VARIANT UPSTREAM DEB SOURCE KERNEL_RELEASE OUT}"
+release_dir="${1:?usage: render-release-notes.sh RELEASE_DIR VARIANT UPSTREAM DEB SOURCE KERNEL_RELEASE CPU_OPTIMIZATION OUT}"
 variant="${2:?}"
 upstream="${3:?}"
 deb_version="${4:?}"
 source_url="${5:?}"
 kernel_release="${6:?}"
-out="${7:?}"
+cpu_optimization="${7:?}"
+out="${8:?}"
 
 cat >"${out}" <<EOF
 # CachyOS \`${variant}\` ${upstream} for Debian 13 (trixie)
 
 Unofficial CachyOS kernel packages built from the GPG-verified upstream source.
 Debian package version: \`${deb_version}\`. Kernel release: \`${kernel_release}\`.
+CPU target: \`${cpu_optimization}\`.
+
+EOF
+case "${cpu_optimization}" in
+  x86-64-v3*)
+    echo "This build requires an x86-64-v3 CPU (AVX2, BMI2, FMA). It does not boot on older x86-64 hardware." >>"${out}"
+    ;;
+  znver3)
+    echo "This build requires an AMD Zen 3 or newer CPU." >>"${out}"
+    ;;
+esac
+cat >>"${out}" <<EOF
 
 ## Packages
 

@@ -45,13 +45,16 @@ dispatch (scheduler or manual)
 - Source comes from `CachyOS/linux-cachyos` at `master`.
 - The source tarball signature is verified against the `validpgpkeys` in the
   variant PKGBUILD. A missing key or a bad signature fails the build.
-- The kernel builds with Debian 13 GCC and the packaged Rust toolchain.
+- The kernel builds with the Debian 13 GCC toolchain.
+- The default CPU target is `x86-64-v3` with `znver3` tuning. The build can be
+  switched to `x86-64-v3`, `znver3`, or `generic`. The default does not boot on
+  pre-v3 x86-64 hardware.
 - `CONFIG_MODULE_SIG_FORCE` and `CONFIG_MODULE_SIG_ALL` are disabled so Debian
   DKMS modules, including the proprietary NVIDIA driver, load without a locally
   trusted key. Lockdown still selects `MODULE_SIG`, so a missing signature taints
   the kernel instead of refusing the module.
-- `CONFIG_DEBUG_INFO` and BTF are disabled. This is a runtime kernel, not a debug
-  build, and the reduced size keeps the release usable.
+- Debug info and BTF are disabled through `DEBUG_INFO_NONE`. This is a runtime
+  kernel, not a debug build, and the reduced size keeps the release usable.
 - Rust kernel drivers are disabled. The CachyOS desktop kernel and its required
   drivers are C. This keeps the build on the Debian 13 C toolchain and removes a
   compiler-version failure mode.

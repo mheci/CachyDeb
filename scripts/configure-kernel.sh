@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-srctree="${1:?usage: configure-kernel.sh /path/to/linux-source}"
+srctree="${1:?usage: configure-kernel.sh /path/to/linux-source CPU_OPTIMIZATION}"
+cpu_optimization="${2:-x86-64-v3-znver3}"
 cd "${srctree}"
 
 cfg() {
@@ -41,16 +42,32 @@ cfg -e KALLSYMS_ALL
 cfg -e IKCONFIG
 cfg -e IKCONFIG_PROC
 cfg -e CACHY
-cfg -e GENERIC_CPU
 for cpu_opt in \
-  GENERIC_CPU2 GENERIC_CPU3 GENERIC_CPU4 MNATIVE MPSC MATOM MCORE2 \
+  GENERIC_CPU GENERIC_CPU2 GENERIC_CPU3 GENERIC_CPU4 MNATIVE MPSC MATOM MCORE2 \
   MNEHALEM MWESTMERE MSILVERMONT MGOLDMONT MGOLDMONTPLUS MSKYLAKE \
   MSKYLAKEX MCANNONLAKE MICELAKE MCASCADELAKE MCOOPERLAKE \
   MTIGERLAKE MSAPPHIRERAPIDS MROCKETLAKE MALDERLAKE MRAPTORLAKE \
   MMETEORLAKE MEMERALDRAPIDS MZEN MZEN2 MZEN3 MZEN4 MZEN5; do
   cfg -d "${cpu_opt}"
 done
-cfg --set-val X86_64_VERSION 1
+case "${cpu_optimization}" in
+  generic)
+    cfg -e GENERIC_CPU
+    cfg --set-val X86_64_VERSION 1
+    ;;
+  x86-64-v3|x86-64-v3-znver3)
+    cfg -e GENERIC_CPU3
+    cfg --set-val X86_64_VERSION 3
+    ;;
+  znver3)
+    cfg -e MZEN3
+    cfg --set-val X86_64_VERSION 3
+    ;;
+  *)
+    echo "unsupported CPU optimization: ${cpu_optimization}" >&2
+    exit 1
+    ;;
+esac
 cfg -e HZ_1000
 cfg --set-val HZ 1000
 cfg -e PREEMPT_DYNAMIC
@@ -281,10 +298,21 @@ assert_cfg DM_CRYPT m
 assert_cfg WLAN y
 assert_cfg SECURITY_APPARMOR y
 assert_cfg ZSWAP y
-assert_cfg GENERIC_CPU y
+case "${cpu_optimization}" in
+  generic)
+    assert_cfg GENERIC_CPU y
+    assert_cfg X86_64_VERSION 1
+    ;;
+  x86-64-v3|x86-64-v3-znver3)
+    assert_cfg GENERIC_CPU3 y
+    assert_cfg X86_64_VERSION 3
+    ;;
+  znver3)
+    assert_cfg MZEN3 y
+    ;;
+esac
 assert_cfg HZ 1000
 assert_cfg PREEMPT_DYNAMIC y
-assert_cfg X86_64_VERSION 1
 assert_cfg MODULE_SIG_ALL n
 assert_cfg MODULE_SIG_FORCE n
 assert_cfg DEBUG_INFO_NONE y
@@ -306,4 +334,4 @@ if [[ "${failed}" -ne 0 ]]; then
 fi
 
 echo "kernel configuration verified"
-grep -E '^CONFIG_(LOCALVERSION|HZ|MODULE_SIG|DEBUG_INFO|DRM_NOUVEAU|DRM_AMDGPU|DRM_I915|FW_LOADER|MODULE_COMPRESS_ZSTD|BTRFS_FS|EXT4_FS)=' .config || true
+grep -E '^CONFIG_(LOCALVERSION|HZ|MODULE_SIG|DEBUG_INFO|GENERIC_CPU|GENERIC_CPU3|MZEN3|X86_64_VERSION|DRM_NOUVEAU|DRM_AMDGPU|DRM_I915|FW_LOADER|MODULE_COMPRESS_ZSTD|BTRFS_FS|EXT4_FS)=' .config || true

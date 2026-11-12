@@ -25,6 +25,7 @@ env:
   UPSTREAM_BRANCH: master
   BUILD_WORKFLOW: build-release.yml
   BUILD_RUNNER: blacksmith-16vcpu-ubuntu-2404
+  CPU_OPTIMIZATION: x86-64-v3-znver3
   STATE_FILE: cachyos-kernel-state.json
   FORCE_BUILD: ${{ inputs.force_build || (github.event.schedule == '0 4 * * 1') }}
 
@@ -105,6 +106,7 @@ jobs:
                 -f runner="${BUILD_RUNNER}" \
                 -f kernel_variant="${variant}" \
                 -f cpu_scheduler="${scheduler}" \
+                -f cpu_optimization="${CPU_OPTIMIZATION}" \
                 -f expected_version="${version}" \
                 -F publish_release=true \
                 -F run_boot_tests=true \

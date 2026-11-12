@@ -32,6 +32,16 @@ on:
           - cachyos
           - bore
           - eevdf
+      cpu_optimization:
+        description: "CPU target. x86-64-v3-znver3 runs on any v3 CPU and is tuned for Zen 3."
+        required: true
+        default: "x86-64-v3-znver3"
+        type: choice
+        options:
+          - x86-64-v3-znver3
+          - x86-64-v3
+          - znver3
+          - generic
       expected_version:
         description: "Upstream pkgver-pkgrel observed by the dispatcher. Leave blank for the current version."
         required: false
@@ -71,6 +81,7 @@ env:
   DEBIAN_FRONTEND: noninteractive
   KERNEL_VARIANT: ${{ inputs.kernel_variant || 'linux-cachyos' }}
   CPU_SCHEDULER: ${{ inputs.cpu_scheduler || 'cachyos' }}
+  CPU_OPTIMIZATION: ${{ inputs.cpu_optimization || 'x86-64-v3-znver3' }}
   EXPECTED_VERSION: ${{ inputs.expected_version || '' }}
   FAIL_ON_CRITICAL_CVE: ${{ inputs.fail_on_critical_cve || false }}
 
@@ -147,7 +158,7 @@ jobs:
           } >>"${GITHUB_OUTPUT}"
 
       - name: Configure kernel for Debian 13
-        run: bash scripts/configure-kernel.sh "${{ steps.upstream.outputs.source_dir }}"
+        run: bash scripts/configure-kernel.sh "${{ steps.upstream.outputs.source_dir }}" "${CPU_OPTIMIZATION}"
 
       - name: Compile and package
         working-directory: ${{ steps.upstream.outputs.source_dir }}
@@ -156,6 +167,7 @@ jobs:
           KDEB_COMPRESS: xz
           KBUILD_BUILD_USER: github-actions
           KBUILD_BUILD_HOST: users.noreply.github.com
+          KCFLAGS: ${{ env.CPU_OPTIMIZATION == 'x86-64-v3-znver3' && '-mtune=znver3' || '' }}
         run: |
           set -euxo pipefail
           tarball="${GITHUB_WORKSPACE}/build/${{ steps.upstream.outputs.srcname }}.tar.gz"
@@ -193,6 +205,7 @@ jobs:
           {
             echo "KERNEL_VARIANT=${KERNEL_VARIANT}"
             echo "CPU_SCHEDULER=${CPU_SCHEDULER}"
+            echo "CPU_OPTIMIZATION=${CPU_OPTIMIZATION}"
             echo "PKGVER=${{ steps.upstream.outputs.pkgver }}"
             echo "PKGREL=${{ steps.upstream.outputs.pkgrel }}"
             echo "UPSTREAM_VERSION=${{ steps.upstream.outputs.upstream_version }}"
@@ -208,6 +221,7 @@ jobs:
             echo "CachyOS kernel for Debian 13 (trixie)"
             echo "Variant: ${KERNEL_VARIANT}"
             echo "Scheduler: ${CPU_SCHEDULER}"
+            echo "CPU target: ${CPU_OPTIMIZATION}"
             echo "Upstream version: ${{ steps.upstream.outputs.upstream_version }}"
             echo "Debian package version: ${{ steps.upstream.outputs.deb_version }}"
             echo "Kernel release: ${kernel_release}"
@@ -438,7 +452,7 @@ jobs:
           . release/kernel.env
           bash scripts/render-release-notes.sh \
             release "${KERNEL_VARIANT}" "${UPSTREAM_VERSION}" "${DEB_VERSION}" \
-            "${SOURCE_URL}" "${KERNEL_RELEASE}" release/RELEASE-NOTES.md
+            "${SOURCE_URL}" "${KERNEL_RELEASE}" "${CPU_OPTIMIZATION}" release/RELEASE-NOTES.md
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
