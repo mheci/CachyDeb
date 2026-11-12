@@ -214,7 +214,6 @@ jobs:
             echo "SOURCE_URL=${{ steps.upstream.outputs.source_url }}"
             echo "BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "BUILD_CONTAINER=debian:13"
-            echo "COMPILER=$(gcc --version | head -n1)"
           } > artifacts/kernel.env
 
           {
