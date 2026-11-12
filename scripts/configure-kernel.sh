@@ -12,16 +12,38 @@ cfg --set-str LOCALVERSION "-cachyos-debian"
 cfg --set-str SYSTEM_TRUSTED_KEYS ""
 cfg --set-str SYSTEM_REVOCATION_KEYS ""
 
-# DKMS and out-of-tree modules must load without a local signing key.
-cfg -d MODULE_SIG
-cfg -d MODULE_SIG_FORMAT
-cfg -d MODULE_SIG_ALL
-cfg -d MODULE_SIG_FORCE
-cfg -d MODULE_SIG_KEY
-# Debug info and BTF multiply build time and package size; this is a runtime kernel.
-cfg -d DEBUG_INFO
-cfg -d DEBUG_INFO_BTF
-cfg -d DEBUG_INFO_BTF_MODULES
+disable_signing_and_debug() {
+  # DKMS and out-of-tree modules must load without a local signing key.
+  cfg -d MODULE_SIG
+  cfg -d MODULE_SIG_FORMAT
+  cfg -d MODULE_SIG_ALL
+  cfg -d MODULE_SIG_FORCE
+  cfg -d MODULE_SIG_KEY
+  cfg -d MODULE_SIG_SHA256
+  cfg -d MODULE_SIG_SHA384
+  cfg -d MODULE_SIG_SHA512
+  cfg -d MODULE_SIG_SHA3_256
+  cfg -d MODULE_SIG_SHA3_384
+  cfg -d MODULE_SIG_SHA3_512
+  cfg -d MODULE_SIG_KEY_TYPE_RSA
+  cfg -d MODULE_SIG_KEY_TYPE_ECDSA
+  cfg -d MODULE_SIG_KEY_TYPE_MLDSA_44
+  cfg -d MODULE_SIG_KEY_TYPE_MLDSA_65
+  cfg -d MODULE_SIG_KEY_TYPE_MLDSA_87
+  # Debug info and BTF multiply build time and package size; this is a runtime kernel.
+  cfg -d DEBUG_INFO
+  cfg -d DEBUG_INFO_DWARF5
+  cfg -d DEBUG_INFO_DWARF4
+  cfg -d DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
+  cfg -d DEBUG_INFO_REDUCED
+  cfg -d DEBUG_INFO_COMPRESSED_NONE
+  cfg -d DEBUG_INFO_COMPRESSED_ZLIB
+  cfg -d DEBUG_INFO_COMPRESSED_ZSTD
+  cfg -d DEBUG_INFO_SPLIT
+  cfg -d DEBUG_INFO_BTF
+  cfg -d DEBUG_INFO_BTF_MODULES
+}
+disable_signing_and_debug
 cfg -d WERROR
 
 cfg -e MODULES
@@ -195,11 +217,9 @@ cfg -e SECURITY_APPARMOR
 
 make olddefconfig
 # Second pass: some fragments carry child symbols that can re-enable the parent.
-cfg -d MODULE_SIG
-cfg -d MODULE_SIG_FORMAT
-cfg -d MODULE_SIG_ALL
-cfg -d DEBUG_INFO
+disable_signing_and_debug
 make olddefconfig
+grep -E 'CONFIG_(MODULE_SIG|DEBUG_INFO)' .config >&2 || true
 
 failed=0
 assert_cfg() {
