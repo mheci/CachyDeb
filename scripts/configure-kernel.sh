@@ -56,12 +56,11 @@ case "${cpu_optimization}" in
     cfg --set-val X86_64_VERSION 1
     ;;
   x86-64-v3|x86-64-v3-znver3)
-    cfg -e GENERIC_CPU3
+    cfg -e GENERIC_CPU
     cfg --set-val X86_64_VERSION 3
     ;;
   znver3)
     cfg -e MZEN3
-    cfg --set-val X86_64_VERSION 3
     ;;
   *)
     echo "unsupported CPU optimization: ${cpu_optimization}" >&2
@@ -304,7 +303,7 @@ case "${cpu_optimization}" in
     assert_cfg X86_64_VERSION 1
     ;;
   x86-64-v3|x86-64-v3-znver3)
-    assert_cfg GENERIC_CPU3 y
+    assert_cfg GENERIC_CPU y
     assert_cfg X86_64_VERSION 3
     ;;
   znver3)
