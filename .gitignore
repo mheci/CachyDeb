@@ -4,3 +4,11 @@
 venv
 build/
 *.log
+__pycache__/
+*.pyc
+artifacts/
+qa-results/
+boot-results/
+cve-results/
+release/
+vulns/

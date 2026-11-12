@@ -1,0 +1,495 @@
+name: Build and release Debian 13 kernel packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Host runner for the Debian 13 build container"
+        required: true
+        default: "blacksmith-16vcpu-ubuntu-2404"
+        type: choice
+        options:
+          - blacksmith-8vcpu-ubuntu-2404
+          - blacksmith-16vcpu-ubuntu-2404
+          - blacksmith-32vcpu-ubuntu-2404
+          - ubuntu-24.04
+      kernel_variant:
+        description: "CachyOS kernel variant from the linux-cachyos repository"
+        required: true
+        default: "linux-cachyos"
+        type: choice
+        options:
+          - linux-cachyos
+          - linux-cachyos-bore
+          - linux-cachyos-eevdf
+          - linux-cachyos-lts
+      cpu_scheduler:
+        description: "CachyOS scheduler/config flavor"
+        required: true
+        default: "cachyos"
+        type: choice
+        options:
+          - cachyos
+          - bore
+          - eevdf
+      expected_version:
+        description: "Upstream pkgver-pkgrel observed by the dispatcher. Leave blank for the current version."
+        required: false
+        default: ""
+        type: string
+      publish_release:
+        description: "Publish a GitHub Release after every gate passes"
+        required: true
+        default: true
+        type: boolean
+      run_boot_tests:
+        description: "Run the Debian 13 QEMU boot matrix before releasing"
+        required: true
+        default: true
+        type: boolean
+      fail_on_critical_cve:
+        description: "Fail the release when an unpatched CVE scores 9.0 or higher"
+        required: true
+        default: false
+        type: boolean
+  pull_request:
+    paths:
+      - ".github/workflows/build-release.yml"
+      - "scripts/**"
+      - "cachyos-kernel-state.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cachyos-build-${{ github.ref }}-${{ inputs.kernel_variant || 'linux-cachyos' }}
+  cancel-in-progress: false
+
+run-name: CachyOS ${{ inputs.kernel_variant || 'linux-cachyos' }} ${{ inputs.expected_version || github.sha }}
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+  KERNEL_VARIANT: ${{ inputs.kernel_variant || 'linux-cachyos' }}
+  CPU_SCHEDULER: ${{ inputs.cpu_scheduler || 'cachyos' }}
+  EXPECTED_VERSION: ${{ inputs.expected_version || '' }}
+  FAIL_ON_CRITICAL_CVE: ${{ inputs.fail_on_critical_cve || false }}
+
+jobs:
+  build:
+    name: Build Debian packages
+    runs-on: ${{ inputs.runner || 'ubuntu-24.04' }}
+    timeout-minutes: 720
+    container:
+      image: debian:13
+    outputs:
+      upstream_version: ${{ steps.upstream.outputs.upstream_version }}
+      deb_version: ${{ steps.upstream.outputs.deb_version }}
+      kernel_release: ${{ steps.manifest.outputs.kernel_release }}
+      source_url: ${{ steps.upstream.outputs.source_url }}
+    steps:
+      - name: Prepare container
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install Debian 13 build dependencies
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates cpio curl debhelper dpkg-dev \
+            fakeroot flex gcc git gnupg kmod libdw-dev libelf-dev libssl-dev \
+            perl python3 rsync xz-utils zstd
+          df -h
+
+      - name: Fetch and verify upstream source
+        id: upstream
+        run: |
+          set -euxo pipefail
+          git clone --depth=1 https://github.com/CachyOS/linux-cachyos.git build/packaging
+          pkgbuild="build/packaging/${KERNEL_VARIANT}/PKGBUILD"
+          test -f "${pkgbuild}"
+          eval "$(bash scripts/upstream-version.sh "${pkgbuild}")"
+
+          if [[ -n "${EXPECTED_VERSION}" && "${version}" != "${EXPECTED_VERSION}" ]]; then
+            echo "upstream moved: expected ${EXPECTED_VERSION}, found ${version}" >&2
+            exit 1
+          fi
+
+          mkdir -p build
+          curl --fail --location --retry 5 --retry-delay 10 \
+            --output "build/${srcname}.tar.gz" "${source_url}"
+          curl --fail --location --retry 5 --retry-delay 10 \
+            --output "build/${srcname}.tar.gz.asc" "${source_url}.asc"
+          bash scripts/verify-source-signature.sh \
+            "${pkgbuild}" "build/${srcname}.tar.gz" "build/${srcname}.tar.gz.asc"
+
+          mkdir -p build/source
+          tar -xf "build/${srcname}.tar.gz" -C build/source
+          source_dir="build/source/${srcname}"
+          test -d "${source_dir}"
+          cp "build/packaging/${KERNEL_VARIANT}/config" "${source_dir}/.config"
+
+          deb_version="${pkgver}-${pkgrel}+cachydeb${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          {
+            echo "pkgver=${pkgver}"
+            echo "pkgrel=${pkgrel}"
+            echo "srcname=${srcname}"
+            echo "upstream_version=${version}"
+            echo "deb_version=${deb_version}"
+            echo "source_url=${source_url}"
+            echo "source_dir=${source_dir}"
+          } >>"${GITHUB_OUTPUT}"
+
+      - name: Configure kernel for Debian 13
+        run: bash scripts/configure-kernel.sh "${{ steps.upstream.outputs.source_dir }}"
+
+      - name: Compile and package
+        working-directory: ${{ steps.upstream.outputs.source_dir }}
+        env:
+          KDEB_PKGVERSION: ${{ steps.upstream.outputs.deb_version }}
+          KDEB_COMPRESS: xz
+          KBUILD_BUILD_USER: github-actions
+          KBUILD_BUILD_HOST: users.noreply.github.com
+        run: |
+          set -euxo pipefail
+          tarball="${GITHUB_WORKSPACE}/build/${{ steps.upstream.outputs.srcname }}.tar.gz"
+          SOURCE_DATE_EPOCH="$(stat -c %Y "${tarball}")"
+          export SOURCE_DATE_EPOCH
+          export KBUILD_BUILD_TIMESTAMP
+          KBUILD_BUILD_TIMESTAMP="$(date -u -d "@${SOURCE_DATE_EPOCH}" '+%a %b %d %H:%M:%S UTC %Y')"
+          fakeroot make -j"$(nproc)" bindeb-pkg
+
+          mkdir -p "${GITHUB_WORKSPACE}/artifacts"
+          find .. -maxdepth 1 -type f -name '*.deb' -exec mv {} "${GITHUB_WORKSPACE}/artifacts/" \;
+          ls -lh "${GITHUB_WORKSPACE}/artifacts"
+          df -h
+
+      - name: Prune and post-process packages
+        run: |
+          set -euxo pipefail
+          python3 scripts/postprocess-debs.py artifacts
+          for deb in artifacts/*.deb; do
+            dpkg-deb --info "${deb}"
+          done
+
+      - name: Write build manifest
+        id: manifest
+        run: |
+          set -euxo pipefail
+          image_deb="$(find artifacts -maxdepth 1 -type f -name 'linux-image-*.deb' ! -name '*-dbg*' | head -n1)"
+          test -n "${image_deb}"
+          rm -rf /tmp/image
+          mkdir -p /tmp/image
+          dpkg-deb -x "${image_deb}" /tmp/image
+          kernel_release="$(find /tmp/image/lib/modules -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | head -n1)"
+          test -n "${kernel_release}"
+
+          {
+            echo "KERNEL_VARIANT=${KERNEL_VARIANT}"
+            echo "CPU_SCHEDULER=${CPU_SCHEDULER}"
+            echo "PKGVER=${{ steps.upstream.outputs.pkgver }}"
+            echo "PKGREL=${{ steps.upstream.outputs.pkgrel }}"
+            echo "UPSTREAM_VERSION=${{ steps.upstream.outputs.upstream_version }}"
+            echo "DEB_VERSION=${{ steps.upstream.outputs.deb_version }}"
+            echo "KERNEL_RELEASE=${kernel_release}"
+            echo "SOURCE_URL=${{ steps.upstream.outputs.source_url }}"
+            echo "BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "BUILD_CONTAINER=debian:13"
+            echo "COMPILER=$(gcc --version | head -n1)"
+          } > artifacts/kernel.env
+
+          {
+            echo "CachyOS kernel for Debian 13 (trixie)"
+            echo "Variant: ${KERNEL_VARIANT}"
+            echo "Scheduler: ${CPU_SCHEDULER}"
+            echo "Upstream version: ${{ steps.upstream.outputs.upstream_version }}"
+            echo "Debian package version: ${{ steps.upstream.outputs.deb_version }}"
+            echo "Kernel release: ${kernel_release}"
+            echo "Source: ${{ steps.upstream.outputs.source_url }}"
+            echo "Source signature: GPG verified"
+            echo "Built at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "Build container: debian:13"
+            echo
+            sha256sum artifacts/*.deb
+          } > artifacts/BUILD-MANIFEST.txt
+
+          sha256sum artifacts/*.deb artifacts/BUILD-MANIFEST.txt artifacts/kernel.env > artifacts/SHA256SUMS
+          echo "kernel_release=${kernel_release}" >>"${GITHUB_OUTPUT}"
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-debs
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
+
+  package-qa:
+    name: Package QA and DKMS proxy
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    container:
+      image: debian:13
+    steps:
+      - name: Prepare container
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-debs
+          path: artifacts
+
+      - name: Install QA dependencies
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates dpkg-dev flex gcc git \
+            initramfs-tools kmod libelf-dev libssl-dev lintian linux-base \
+            linux-libc-dev python3 xz-utils zstd
+
+      - name: Run package QA
+        run: bash scripts/package-qa.sh artifacts qa-results "${KERNEL_VARIANT}"
+
+      - name: Upload QA results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-qa
+          path: qa-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+  cve-scan:
+    name: Kernel CVE scan
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-debs
+          path: artifacts
+
+      - name: Clone Linux CVE dataset
+        run: |
+          set -euxo pipefail
+          for _ in 1 2 3; do
+            rm -rf vulns
+            if git clone --depth=1 --single-branch \
+              https://git.kernel.org/pub/scm/linux/security/vulns.git vulns; then
+              break
+            fi
+            sleep 10
+          done
+          test -d vulns/cve/published
+
+      - name: Scan kernel version
+        run: |
+          set -euxo pipefail
+          . artifacts/kernel.env
+          args=(--version "${PKGVER}" --repo vulns --output cve-results/cve-report.md --json cve-results/cve-report.json)
+          if [[ "${FAIL_ON_CRITICAL_CVE}" == "true" ]]; then
+            args+=(--fail-on-critical)
+          fi
+          python3 scripts/kernel-cve.py "${args[@]}"
+
+      - name: Upload CVE report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cve-report
+          path: cve-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+  boot-test:
+    name: Debian 13 boot matrix
+    needs: [build, package-qa]
+    if: ${{ github.event_name == 'pull_request' || inputs.run_boot_tests }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-debs
+          path: artifacts
+
+      - name: Download QA results
+        uses: actions/download-artifact@v4
+        with:
+          name: package-qa
+          path: qa-results
+
+      - name: Install boot-test dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            btrfs-progs dosfstools e2fsprogs gdisk mtools mmdebstrap ovmf \
+            parted qemu-system-x86 qemu-utils systemd-boot-efi util-linux \
+            xz-utils
+
+      - name: Run boot matrix
+        run: |
+          set -euxo pipefail
+          sudo bash scripts/boot-test.sh artifacts qa-results boot-results "${KERNEL_VARIANT}"
+
+      - name: Upload boot results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-results
+          path: boot-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    needs: [build, package-qa, cve-scan, boot-test]
+    if: >-
+      always() &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.publish_release &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      needs.build.result == 'success' &&
+      needs.package-qa.result == 'success' &&
+      needs.cve-scan.result == 'success' &&
+      needs.boot-test.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: cachyos-release-state
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-debs
+          path: release
+
+      - name: Download QA results
+        uses: actions/download-artifact@v4
+        with:
+          name: package-qa
+          path: release/qa
+
+      - name: Download CVE report
+        uses: actions/download-artifact@v4
+        with:
+          name: cve-report
+          path: release/cve
+
+      - name: Download boot results
+        uses: actions/download-artifact@v4
+        with:
+          name: boot-results
+          path: release/boot
+
+      - name: Check upstream is still current
+        run: |
+          set -euxo pipefail
+          . release/kernel.env
+          git clone --depth=1 https://github.com/CachyOS/linux-cachyos.git /tmp/current-packaging
+          pkgbuild="/tmp/current-packaging/${KERNEL_VARIANT}/PKGBUILD"
+          test -f "${pkgbuild}"
+          eval "$(bash scripts/upstream-version.sh "${pkgbuild}")"
+          if [[ "${version}" != "${UPSTREAM_VERSION}" ]]; then
+            echo "upstream moved from ${UPSTREAM_VERSION} to ${version}; refusing to publish" >&2
+            exit 1
+          fi
+
+      - name: Assemble release notes
+        run: |
+          set -euxo pipefail
+          cp release/qa/qa-report.md release/qa-report.md
+          cp release/cve/cve-report.md release/cve-report.md
+          cp release/boot/boot-report.md release/boot-report.md
+          . release/kernel.env
+          bash scripts/render-release-notes.sh \
+            release "${KERNEL_VARIANT}" "${UPSTREAM_VERSION}" "${DEB_VERSION}" \
+            "${SOURCE_URL}" "${KERNEL_RELEASE}" release/RELEASE-NOTES.md
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "release/*.deb"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          . release/kernel.env
+          tag="cachyos-debian-${KERNEL_VARIANT}-${DEB_VERSION}"
+          title="CachyOS ${KERNEL_VARIANT} ${UPSTREAM_VERSION} for Debian 13"
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release upload "${tag}" \
+              release/*.deb release/BUILD-MANIFEST.txt release/SHA256SUMS \
+              release/kernel.env release/RELEASE-NOTES.md release/qa-report.md \
+              release/boot-report.md release/cve-report.md --clobber
+            gh release edit "${tag}" --title "${title}" --notes-file release/RELEASE-NOTES.md --latest
+          else
+            gh release create "${tag}" \
+              release/*.deb release/BUILD-MANIFEST.txt release/SHA256SUMS \
+              release/kernel.env release/RELEASE-NOTES.md release/qa-report.md \
+              release/boot-report.md release/cve-report.md \
+              --title "${title}" --notes-file release/RELEASE-NOTES.md \
+              --target "${GITHUB_SHA}" --latest
+          fi
+
+      - name: Record successful build in state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euxo pipefail
+          . release/kernel.env
+          changed="$(python3 scripts/update-state.py cachyos-kernel-state.json "${KERNEL_VARIANT}" "${UPSTREAM_VERSION}")"
+          if [[ "${changed}" != "changed" ]]; then
+            echo "state already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cachyos-kernel-state.json
+          git commit -m "ci: record successful ${KERNEL_VARIANT} ${UPSTREAM_VERSION}"
+          for _ in 1 2 3 4 5; do
+            if git pull --rebase --autostash origin "${DEFAULT_BRANCH}" && \
+              git push origin "HEAD:${DEFAULT_BRANCH}"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "could not push the updated state file" >&2
+          exit 1
