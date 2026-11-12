@@ -43,8 +43,11 @@ record "- Headers package: $(basename "${headers_deb}")"
 
 record ""
 record "## lintian"
+# The in-tree headers package intentionally ships /lib/modules/<release>/build.
 for deb in "${debs[@]}"; do
-  if ! lintian --fail-on error --suppress-tags unstripped-binary-or-object "${deb}" >>"${out}/lintian.txt" 2>&1; then
+  if ! lintian --fail-on error \
+    --suppress-tags unstripped-binary-or-object,aliased-location,package-contains-vcs-control-file \
+    "${deb}" >>"${out}/lintian.txt" 2>&1; then
     fail "lintian rejected $(basename "${deb}")"
   fi
 done
