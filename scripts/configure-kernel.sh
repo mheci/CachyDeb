@@ -14,13 +14,14 @@ cfg --set-str SYSTEM_REVOCATION_KEYS ""
 
 # DKMS and out-of-tree modules must load without a local signing key.
 cfg -d MODULE_SIG
+cfg -d MODULE_SIG_FORMAT
 cfg -d MODULE_SIG_ALL
 cfg -d MODULE_SIG_FORCE
+cfg -d MODULE_SIG_KEY
 # Debug info and BTF multiply build time and package size; this is a runtime kernel.
 cfg -d DEBUG_INFO
 cfg -d DEBUG_INFO_BTF
 cfg -d DEBUG_INFO_BTF_MODULES
-cfg -e DEBUG_INFO_NONE
 cfg -d WERROR
 
 cfg -e MODULES
@@ -136,7 +137,7 @@ cfg -e MODULE_COMPRESS_ALL
 
 cfg -m BT
 cfg -m BT_HCIBTUSB
-cfg -m WLAN
+cfg -e WLAN
 cfg -m CFG80211
 cfg -m MAC80211
 cfg -m IWLWIFI
@@ -169,16 +170,16 @@ cfg -e FAT_FS
 
 cfg -e BLK_DEV_NVME
 cfg -e NVME_CORE
+cfg -e MD
 cfg -m BLK_DEV_DM
 cfg -m DM_CRYPT
 cfg -m DM_SNAPSHOT
 cfg -m DM_THIN_PROVISIONING
-cfg -m MD
 cfg -m MD_RAID1
 cfg -e CRYPTO_XTS
 cfg -e CRYPTO_AES_NI_INTEL
 
-cfg -e KVM
+cfg -m KVM
 cfg -m KVM_INTEL
 cfg -m KVM_AMD
 cfg -m VFIO
@@ -192,6 +193,12 @@ cfg -m VIRTIO_SCSI
 
 cfg -e SECURITY_APPARMOR
 
+make olddefconfig
+# Second pass: some fragments carry child symbols that can re-enable the parent.
+cfg -d MODULE_SIG
+cfg -d MODULE_SIG_FORMAT
+cfg -d MODULE_SIG_ALL
+cfg -d DEBUG_INFO
 make olddefconfig
 
 failed=0
@@ -262,7 +269,10 @@ assert_cfg VFIO m
 assert_cfg VFIO_PCI m
 assert_cfg BLK_DEV_NVME y
 assert_cfg NVME_CORE y
+assert_cfg MD y
+assert_cfg BLK_DEV_DM m
 assert_cfg DM_CRYPT m
+assert_cfg WLAN y
 assert_cfg SECURITY_APPARMOR y
 assert_cfg ZSWAP y
 assert_cfg GENERIC_CPU y
@@ -272,7 +282,11 @@ assert_cfg X86_64_VERSION 1
 assert_cfg MODULE_SIG n
 assert_cfg DEBUG_INFO n
 assert_cfg WERROR n
-assert_cfg RUST n
+
+if grep -qE '^CONFIG_RUST=(y|m)' .config; then
+  echo "config assertion failed: CONFIG_RUST is enabled" >&2
+  failed=1
+fi
 
 grep -qx 'CONFIG_LOCALVERSION="-cachyos-debian"' .config || {
   echo "config assertion failed: LOCALVERSION is not -cachyos-debian" >&2
