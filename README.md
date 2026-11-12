@@ -126,9 +126,10 @@ this pipeline.
 sudo apt install linux-headers-* nvidia-driver
 ```
 
-The kernel disables module signing (`CONFIG_MODULE_SIG`). Unsigned DKMS modules
-therefore load without a local signing key. This is deliberate. It is also why
-Secure Boot needs manual signing.
+The kernel disables module signature enforcement (`CONFIG_MODULE_SIG_FORCE` is
+off). Unsigned DKMS modules therefore load without a local signing key, with a
+kernel taint for the missing signature. This is deliberate. Secure Boot still
+needs manual signing.
 
 ## Firmware
 

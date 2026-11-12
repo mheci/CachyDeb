@@ -46,8 +46,10 @@ dispatch (scheduler or manual)
 - The source tarball signature is verified against the `validpgpkeys` in the
   variant PKGBUILD. A missing key or a bad signature fails the build.
 - The kernel builds with Debian 13 GCC and the packaged Rust toolchain.
-- `CONFIG_MODULE_SIG` is disabled so Debian DKMS modules, including the
-  proprietary NVIDIA driver, load without a locally trusted key.
+- `CONFIG_MODULE_SIG_FORCE` and `CONFIG_MODULE_SIG_ALL` are disabled so Debian
+  DKMS modules, including the proprietary NVIDIA driver, load without a locally
+  trusted key. Lockdown still selects `MODULE_SIG`, so a missing signature taints
+  the kernel instead of refusing the module.
 - `CONFIG_DEBUG_INFO` and BTF are disabled. This is a runtime kernel, not a debug
   build, and the reduced size keeps the release usable.
 - Rust kernel drivers are disabled. The CachyOS desktop kernel and its required
@@ -105,7 +107,7 @@ The guest checks:
 - a module built against the packaged headers loads and unloads
 - an Ethernet interface and a virtio block device exist
 - dmesg has no oops, BUG, panic, WARN, UBSAN, or refcount failure
-- module signature verification did not fail
+- an unsigned module built against the packaged headers loads and unloads
 
 Any failure stops the run and blocks the release.
 

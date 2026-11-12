@@ -120,8 +120,9 @@ assert_cfg ZSWAP y
 assert_cfg KVM m
 assert_cfg DM_CRYPT m
 assert_cfg SECURITY_APPARMOR y
-assert_cfg MODULE_SIG n
-assert_cfg DEBUG_INFO n
+assert_cfg MODULE_SIG_ALL n
+assert_cfg MODULE_SIG_FORCE n
+assert_cfg DEBUG_INFO_NONE y
 assert_cfg WERROR n
 grep -qx 'CONFIG_LOCALVERSION="-cachyos-debian"' "${config}" || fail "LOCALVERSION is not -cachyos-debian"
 record "- kernel config: required Debian desktop, NVIDIA, firmware, and DKMS settings present"

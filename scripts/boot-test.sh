@@ -133,7 +133,6 @@ ip -o link show | grep -q 'link/ether' || fail "no ethernet interface"
 
 bad="$(dmesg | grep -E 'kernel BUG at|Oops:|general protection fault|BUG: unable to handle|Kernel panic|WARNING: CPU:|UBSAN:|refcount_t: underflow|list_del corruption' || true)"
 [[ -z "${bad}" ]] || fail "dmesg=${bad}"
-dmesg | grep -qi 'module verification failed' && fail "module verification failed"
 
 echo "CACHYDEB_BOOT_OK release=${actual_release} rootfs=${actual_fs} attempt=${attempt}"
 

@@ -75,8 +75,8 @@ sudo apt install firmware-linux-free firmware-misc-nonfree firmware-nvidia-gsp
 
 Nouveau uses the GSP firmware for Turing and newer cards. For the proprietary
 driver, enable the \`non-free\` component and install \`nvidia-driver\`; DKMS builds
-the module against the packaged headers. Module signing is disabled in this
-kernel so unsigned DKMS modules load.
+the module against the packaged headers. Module signature enforcement is
+disabled in this kernel so unsigned DKMS modules load.
 
 ## Secure Boot
 
