@@ -76,7 +76,8 @@ dispatch (scheduler or manual)
 - A trivial out-of-tree module builds against the packaged headers. Its vermagic
   must match the kernel release. This is the DKMS proxy for the NVIDIA driver.
 - The packages are installed into a Debian 13 environment. The post-install
-  script must produce an initramfs containing `virtio_blk` and `ext4`.
+  script must produce an initramfs, and the btrfs module must be includable for
+  the btrfs boot scenario.
 
 ### CVE gate
 

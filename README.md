@@ -198,7 +198,7 @@ The pipeline proves these properties before a release:
 - the source tarball signature matches a key in the CachyOS PKGBUILD
 - `lintian` reports no errors
 - packages install on Debian 13
-- the post-install script creates an initramfs with `virtio_blk` and `ext4`
+- the post-install script creates an initramfs and includes the `btrfs` module
 - `depmod` reports no unresolved symbols
 - required modules exist
 - a module built against the packaged headers loads in the guest
