@@ -185,6 +185,7 @@ fi
 record "- install on Debian 13: pass"
 
 [[ -f "/boot/vmlinuz-${release}" ]] || fail "installed image has no /boot/vmlinuz-${release}"
+printf 'virtio_blk\next4\n' >>/etc/initramfs-tools/modules
 if ! update-initramfs -c -k "${release}" >>"${out}/initramfs.log" 2>&1; then
   fail "update-initramfs failed"
 fi
