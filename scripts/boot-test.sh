@@ -257,7 +257,8 @@ run_bios() {
   cp --reflink=auto "${image}" "${work}/${name}.img"
   set +e
   timeout 900 qemu-system-x86_64 -machine "pc,accel=${accel}" -cpu "${cpu}" \
-    "${qemu_common[@]}" -drive "file=${work}/${name}.img,if=virtio,format=raw,cache=writeback" \
+    "${qemu_common[@]}" -serial "file:${serial}" \
+    -drive "file=${work}/${name}.img,if=virtio,format=raw,cache=writeback" \
     -kernel "${vmlinuz}" -initrd "${rootfs}/boot/initrd.img-${release}" -append "${cmdline}" \
     -no-reboot >/dev/null 2>&1
   local status=$?
@@ -288,7 +289,7 @@ EOF
   cp --reflink=auto "${image}" "${work}/${name}.img"
   set +e
   timeout 900 qemu-system-x86_64 -machine "q35,accel=${accel}" -cpu "${cpu}" \
-    "${qemu_common[@]}" -bios "${ovmf}" \
+    "${qemu_common[@]}" -serial "file:${serial}" -bios "${ovmf}" \
     -drive "file=${esp_img},if=virtio,format=raw" \
     -drive "file=${work}/${name}.img,if=virtio,format=raw,cache=writeback" >/dev/null 2>&1
   local status=$?
