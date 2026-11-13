@@ -210,7 +210,7 @@ esp_part="${work}/esp-part.img"
 truncate -s 520M "${esp_img}"
 parted -s "${esp_img}" mklabel gpt mkpart ESP fat32 1MiB 513MiB
 sgdisk -t 1:ef00 "${esp_img}"
-mkfs.vfat -F 32 -n ESP -C "${esp_part}" 512M
+mkfs.vfat -F 32 -n ESP -C "${esp_part}" 524288
 mmd -i "${esp_part}" ::/EFI ::/EFI/BOOT ::/EFI/systemd ::/loader ::/loader/entries
 boot_binary=""
 for candidate in /usr/lib/systemd/boot/efi/systemd-bootx64.efi /usr/lib/systemd/boot/efi/systemd-bootx64.efi.signed; do
