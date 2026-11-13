@@ -185,13 +185,17 @@ fi
 record "- install on Debian 13: pass"
 
 [[ -f "/boot/vmlinuz-${release}" ]] || fail "installed image has no /boot/vmlinuz-${release}"
+sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf
+grep -q '^MODULES=' /etc/initramfs-tools/initramfs.conf || echo 'MODULES=most' >>/etc/initramfs-tools/initramfs.conf
 printf 'virtio_blk\next4\nbtrfs\n' >>/etc/initramfs-tools/modules
 if ! update-initramfs -c -k "${release}" >>"${out}/initramfs.log" 2>&1; then
   fail "update-initramfs failed"
 fi
 [[ -s "/boot/initrd.img-${release}" ]] || fail "installed image produced no initramfs"
+lsinitramfs "/boot/initrd.img-${release}" >"${work}/initramfs.list" 2>>"${out}/initramfs.log" || true
 # virtio_blk and ext4 are built in; btrfs is the module this test can observe.
-if ! lsinitramfs "/boot/initrd.img-${release}" | grep -q 'btrfs'; then
+if ! grep -q 'btrfs' "${work}/initramfs.list"; then
+  cp "${work}/initramfs.list" "${out}/initramfs.list"
   fail "initramfs is missing btrfs"
 fi
 record "- initramfs generation: pass (btrfs module included)"

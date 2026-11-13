@@ -181,7 +181,7 @@ if ! chroot "${rootfs}" /bin/bash -c 'export DEBIAN_FRONTEND=noninteractive; dpk
   chroot "${rootfs}" /bin/bash -c 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get -f install -y' \
     >>"${out}/install.log" 2>&1 || fail "kernel packages did not install in the Debian 13 rootfs"
 fi
-chroot "${rootfs}" /bin/bash -c 'export DEBIAN_FRONTEND=noninteractive; dpkg --configure -a; update-initramfs -u -k all' \
+chroot "${rootfs}" /bin/bash -c 'export DEBIAN_FRONTEND=noninteractive; dpkg --configure -a; sed -i "s/^MODULES=.*/MODULES=most/" /etc/initramfs-tools/initramfs.conf; grep -q "^MODULES=" /etc/initramfs-tools/initramfs.conf || echo "MODULES=most" >> /etc/initramfs-tools/initramfs.conf; update-initramfs -u -k all' \
   >>"${out}/install.log" 2>&1 || fail "initramfs generation failed in the Debian 13 rootfs"
 
 [[ -s "${rootfs}/boot/initrd.img-${release}" ]] || fail "no initramfs for ${release}"
@@ -207,10 +207,10 @@ mkfs.btrfs -q -f -L cachydeb-root -r "${rootfs}" "${btrfs_img}"
 
 esp_img="${work}/esp.img"
 esp_part="${work}/esp-part.img"
-truncate -s 260M "${esp_img}"
-parted -s "${esp_img}" mklabel gpt mkpart ESP fat32 1MiB 257MiB
+truncate -s 520M "${esp_img}"
+parted -s "${esp_img}" mklabel gpt mkpart ESP fat32 1MiB 513MiB
 sgdisk -t 1:ef00 "${esp_img}"
-mkfs.vfat -F 32 -n ESP -C "${esp_part}" 256M
+mkfs.vfat -F 32 -n ESP -C "${esp_part}" 512M
 mmd -i "${esp_part}" ::/EFI ::/EFI/BOOT ::/EFI/systemd ::/loader ::/loader/entries
 boot_binary=""
 for candidate in /usr/lib/systemd/boot/efi/systemd-bootx64.efi /usr/lib/systemd/boot/efi/systemd-bootx64.efi.signed; do
