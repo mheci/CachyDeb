@@ -13,6 +13,7 @@ report="${out}/boot-report.md"
 : >"${report}"
 rootfs="${work}/rootfs"
 serial=""
+qemu_log=""
 mounted=0
 
 cleanup() {
@@ -33,6 +34,9 @@ record() {
 fail() {
   record "- FAILED: $*"
   echo "boot test failed: $*" >&2
+  if [[ -n "${qemu_log}" && -f "${qemu_log}" ]]; then
+    tail -n 80 "${qemu_log}" >&2 || true
+  fi
   if [[ -n "${serial}" && -f "${serial}" ]]; then
     tail -n 250 "${serial}" >&2 || true
   fi
@@ -236,6 +240,16 @@ for candidate in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd; d
 done
 [[ -n "${ovmf}" ]] || fail "OVMF firmware not found on the host"
 
+ovmf_vars=""
+for candidate in /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd; do
+  if [[ -f "${candidate}" ]]; then
+    ovmf_vars="${candidate}"
+    break
+  fi
+done
+[[ -n "${ovmf_vars}" ]] || fail "OVMF variable store not found on the host"
+cp "${ovmf_vars}" "${work}/OVMF_VARS.fd"
+
 if [[ -e /dev/kvm && -r /dev/kvm && -w /dev/kvm ]]; then
   accel="kvm"
   cpu="host"
@@ -254,13 +268,14 @@ run_bios() {
   local name="$1" image="$2" fstype="$3"
   serial="${out}/${name}.log"
   local cmdline="root=/dev/vda rw console=ttyS0,115200 systemd.journald.forward_to_console=1 systemd.show_status=1 panic=30 oops=panic cachydeb.rootfs=${fstype} cachydeb.reboot=0"
+  qemu_log="${out}/${name}.qemu.log"
   cp --reflink=auto "${image}" "${work}/${name}.img"
   set +e
   timeout 900 qemu-system-x86_64 -machine "pc,accel=${accel}" -cpu "${cpu}" \
     "${qemu_common[@]}" -serial "file:${serial}" \
     -drive "file=${work}/${name}.img,if=virtio,format=raw,cache=writeback" \
     -kernel "${vmlinuz}" -initrd "${rootfs}/boot/initrd.img-${release}" -append "${cmdline}" \
-    -no-reboot >/dev/null 2>&1
+    -no-reboot >/dev/null 2>"${qemu_log}"
   local status=$?
   set -e
   local ok
@@ -286,12 +301,17 @@ options ${cmdline}
 EOF
   mcopy -o -i "${esp_part}" "${work}/entry.conf" ::/loader/entries/cachydeb.conf
   dd if="${esp_part}" of="${esp_img}" bs=1M seek=1 conv=notrunc status=none
+  qemu_log="${out}/${name}.qemu.log"
   cp --reflink=auto "${image}" "${work}/${name}.img"
   set +e
   timeout 900 qemu-system-x86_64 -machine "q35,accel=${accel}" -cpu "${cpu}" \
-    "${qemu_common[@]}" -serial "file:${serial}" -bios "${ovmf}" \
-    -drive "file=${esp_img},if=virtio,format=raw" \
-    -drive "file=${work}/${name}.img,if=virtio,format=raw,cache=writeback" >/dev/null 2>&1
+    "${qemu_common[@]}" -serial "file:${serial}" \
+    -drive if=pflash,format=raw,readonly=on,file="${ovmf}" \
+    -drive if=pflash,format=raw,file="${work}/OVMF_VARS.fd" \
+    -drive id=esp,file="${esp_img}",if=none,format=raw \
+    -device virtio-blk-pci,drive=esp,bootindex=1 \
+    -drive id=root,file="${work}/${name}.img",if=none,format=raw,cache=writeback \
+    -device virtio-blk-pci,drive=root >/dev/null 2>"${qemu_log}"
   local status=$?
   set -e
   local ok
