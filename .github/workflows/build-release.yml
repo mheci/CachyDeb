@@ -201,6 +201,11 @@ jobs:
           dpkg-deb -x "${image_deb}" /tmp/image
           kernel_release="$(find /tmp/image/lib/modules -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | head -n1)"
           test -n "${kernel_release}"
+          pkgver="${{ steps.upstream.outputs.pkgver }}"
+          if [[ "${kernel_release}" != "${pkgver}"* ]]; then
+            echo "kernel release ${kernel_release} does not match PKGVER ${pkgver}" >&2
+            exit 1
+          fi
 
           {
             echo "KERNEL_VARIANT=${KERNEL_VARIANT}"
@@ -229,10 +234,10 @@ jobs:
             echo "Built at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "Build container: debian:13"
             echo
-            sha256sum artifacts/*.deb
+            (cd artifacts && sha256sum ./*.deb)
           } > artifacts/BUILD-MANIFEST.txt
 
-          sha256sum artifacts/*.deb artifacts/BUILD-MANIFEST.txt artifacts/kernel.env > artifacts/SHA256SUMS
+          (cd artifacts && sha256sum ./*.deb ./BUILD-MANIFEST.txt ./kernel.env) > artifacts/SHA256SUMS
           echo "kernel_release=${kernel_release}" >>"${GITHUB_OUTPUT}"
 
       - name: Upload packages

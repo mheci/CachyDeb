@@ -7,7 +7,6 @@ variant="${3:-unknown}"
 
 mkdir -p "${out}"
 work="$(mktemp -d)"
-trap 'rm -rf "${work}"' EXIT
 report="${out}/qa-report.md"
 : >"${report}"
 
@@ -22,7 +21,7 @@ fail() {
 }
 
 # shellcheck disable=SC2154
-trap 'status=$?; if [[ ${status} -ne 0 ]]; then printf -- "- FAILED: command exited with status %s\n" "${status}" >>"${report}"; fi' EXIT
+trap 'status=$?; if [[ ${status} -ne 0 ]]; then printf -- "- FAILED: command exited with status %s\n" "${status}" >>"${report}"; fi; rm -rf "${work}"' EXIT
 
 shopt -s nullglob
 debs=("${artifacts}"/*.deb)
